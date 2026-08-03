@@ -1,92 +1,102 @@
-'use client'
+import { 
+  getHome, getTop, getPopular, getUpcoming, getMovies,
+  getAction, getRomance, getComedy, getAdventure, getSciFi, getFantasy
+} from '@/lib/scraper';
+import { AnimeCard } from '@/components/AnimeCard';
+import { Pagination } from '@/components/Pagination';
+import { HorizontalScroller } from '@/components/HorizontalScroller';
 
-import { useState } from 'react'
-import { ImageUploader } from '@/components/image-uploader'
-import { PromptResult } from '@/components/prompt-result'
-import { History } from '@/components/history'
-import { Settings } from '@/components/settings'
-import { ThemeToggle } from '@/components/theme-toggle'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Sparkles, History as HistoryIcon, Settings as SettingsIcon } from 'lucide-react'
+export default async function HomePage(props: { searchParams?: Promise<{ [key: string]: string | string[] | undefined }> }) {
+  const searchParams = await props.searchParams;
+  const page = searchParams?.page ? parseInt(searchParams.page as string) : 1;
+  
+  // We stagger the fetches slightly or group them to improve reliability with Jikan API rate limits (3 requests / second)
+  let homeData = { items: [], currentPage: 1, hasNext: false };
+  let extraSections: { title: string, href: string, items: any[] }[] = [];
 
-export default function Home() {
-  const [analysisResult, setAnalysisResult] = useState(null)
-  const [uploadedImage, setUploadedImage] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState('upload')
+  if (page === 1) {
+    // Group 1
+    const [resHome, resTop, resPopular] = await Promise.all([
+      getHome(page), getTop(1), getPopular(1)
+    ]);
+    // Group 2
+    await new Promise(r => setTimeout(r, 600)); // wait 600ms
+    const [resUpcoming, resMovies, resAction] = await Promise.all([
+      getUpcoming(1), getMovies(1), getAction(1)
+    ]);
+    // Group 3
+    await new Promise(r => setTimeout(r, 600)); // wait 600ms
+    const [resRomance, resComedy, resAdventure] = await Promise.all([
+      getRomance(1), getComedy(1), getAdventure(1)
+    ]);
+    // Group 4
+    await new Promise(r => setTimeout(r, 600));
+    const [resSciFi, resFantasy] = await Promise.all([
+      getSciFi(1), getFantasy(1)
+    ]);
+
+    homeData = resHome as any;
+    extraSections = [
+      { title: "Trending Animes", href: "/top", items: resTop.items },
+      { title: "Now Playing", href: "/", items: resHome.items },
+      { title: "Most Popular", href: "/popular", items: resPopular.items },
+      { title: "Upcoming Seasons", href: "/upcoming", items: resUpcoming.items },
+      { title: "Top Movies", href: "/movies", items: resMovies.items },
+      { title: "Action", href: "/genre/1", items: resAction.items },
+      { title: "Romance", href: "/genre/22", items: resRomance.items },
+      { title: "Comedy", href: "/genre/4", items: resComedy.items },
+      { title: "Adventure", href: "/genre/2", items: resAdventure.items },
+      { title: "Sci-Fi", href: "/genre/24", items: resSciFi.items },
+      { title: "Fantasy", href: "/genre/10", items: resFantasy.items },
+    ];
+  } else {
+    homeData = await getHome(page) as any;
+  }
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-950">
-      <div className="container mx-auto px-4 py-8 max-w-7xl">
-        {/* Header */}
-        <header className="flex justify-between items-center mb-8">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl gradient-bg">
-              <Sparkles className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                Image to Prompt
-              </h1>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Gemini AI Image Analyzer
-              </p>
-            </div>
+    <div className="flex flex-col gap-10 overflow-hidden w-full">
+      {page === 1 ? (
+        <>
+          {extraSections.map((section, idx) => {
+            if (!section.items || section.items.length === 0) return null;
+            return (
+              <section key={idx}>
+                <HorizontalScroller title={section.title} viewAllHref={section.href}>
+                  {section.items.slice(0, 15).map((anime, i) => (
+                    <div key={`${section.title}-${i}`} className="snap-start min-w-[140px] w-[140px] md:min-w-[180px] md:w-[180px] shrink-0">
+                      <AnimeCard anime={anime} />
+                    </div>
+                  ))}
+                </HorizontalScroller>
+              </section>
+            );
+          })}
+        </>
+      ) : (
+        <section>
+          <div className="flex items-center justify-between mb-4 px-1">
+            <h2 className="text-[1.1rem] md:text-xl font-bold text-[#e0e0e0] flex items-center">
+              Now Playing (Page {page})
+            </h2>
           </div>
-          <div className="flex items-center gap-2">
-            <ThemeToggle />
-          </div>
-        </header>
-
-        {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 max-w-md mx-auto bg-white/50 dark:bg-gray-800/50 backdrop-blur">
-            <TabsTrigger value="upload" className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4" />
-              Upload
-            </TabsTrigger>
-            <TabsTrigger value="history" className="flex items-center gap-2">
-              <HistoryIcon className="w-4 h-4" />
-              History
-            </TabsTrigger>
-            <TabsTrigger value="settings" className="flex items-center gap-2">
-              <SettingsIcon className="w-4 h-4" />
-              Settings
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="upload" className="space-y-6">
-            <div className="grid lg:grid-cols-5 gap-6">
-              <div className="lg:col-span-2">
-                <ImageUploader
-                  onImageUpload={setUploadedImage}
-                  onAnalysisComplete={setAnalysisResult}
-                />
-              </div>
-              <div className="lg:col-span-3">
-                <PromptResult
-                  result={analysisResult}
-                  uploadedImage={uploadedImage}
-                  onClear={() => {
-                    setAnalysisResult(null)
-                    setUploadedImage(null)
-                  }}
-                />
-              </div>
+          
+          {homeData.items.length > 0 ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+              {homeData.items.map((anime: any, i: number) => (
+                <AnimeCard key={`home-${anime.slug}-${i}`} anime={anime} />
+              ))}
             </div>
-          </TabsContent>
+          ) : (
+            <div className="text-center py-20 text-white/40">
+              No anime found.
+            </div>
+          )}
+        </section>
+      )}
 
-          <TabsContent value="history">
-            <History onSelectPrompt={(prompt) => {
-              setAnalysisResult(prompt)
-              setActiveTab('upload')
-            }} />
-          </TabsContent>
-
-          <TabsContent value="settings">
-            <Settings />
-          </TabsContent>
-        </Tabs>
+      <div className="mt-8">
+        <Pagination currentPage={homeData.currentPage} hasNext={homeData.hasNext} basePath="/" />
       </div>
-    </main>
-  )
+    </div>
+  );
 }
